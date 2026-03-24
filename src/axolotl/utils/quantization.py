@@ -121,7 +121,7 @@ def get_quantization_config(
         return NVFP4InferenceConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
-        from torchao.prototype.qat import MXFakeQuantizeConfig
+        from torchao.prototype.mx_formats.inference_workflow import MXDynamicActivationMXWeightConfig
 
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
         block_size = group_size if group_size is not None else 32
@@ -129,8 +129,12 @@ def get_quantization_config(
             raise ValueError(
                 "MXFP4 quantization must use a block_size (group_size) of 32"
             )
-
-        return MXFakeQuantizeConfig(dtype=torch.float4_e2m1fn_x2, block_size=block_size)
+        base_cfg = MXDynamicActivationMXWeightConfig(
+            block_size=block_size,
+            activation_dtype=torch.float4_e2m1fn_x2,
+            weight_dtype=torch.float4_e2m1fn_x2,
+        )
+        return base_cfg
 
     raise ValueError(
         f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}"
@@ -189,17 +193,13 @@ def _make_qat_config(
         IntxFakeQuantizeConfig,
     )
 
-    if isinstance(base_config, MXFakeQuantizeConfig):
-        return QATConfig(
-            activation_config=base_config,
-            weight_config=base_config,
-        )
 
     # Build explicit weight config
     weight_fq_config: (
         Int4WeightFakeQuantizeConfig
         | IntxFakeQuantizeConfig
         | Float8FakeQuantizeConfig
+        | MXFakeQuantizeConfig
         | None
     ) = None
     if weight_dtype == TorchAOQuantDType.int4:
@@ -219,6 +219,13 @@ def _make_qat_config(
         weight_fq_config = Int4WeightFakeQuantizeConfig(**kwargs)
     elif weight_dtype == TorchAOQuantDType.float8_e4m3fn:
         weight_fq_config = Float8FakeQuantizeConfig(dtype=torch.float8_e4m3fn)
+    elif weight_dtype == TorchAOQuantDType.mxfp4:
+        weight_fq_config = MXFakeQuantizeConfig(
+            dtype=torch.float4_e2m1fn_x2,
+            block_size=group_size,
+            scaling_mode=base_config.scaling_mode,
+            kernel_preference=base_config.kernel_preference
+        )
 
     # Build explicit activation config
     activation_fq_config = None
@@ -228,6 +235,13 @@ def _make_qat_config(
         )
     elif activation_dtype == TorchAOQuantDType.float8_e4m3fn:
         activation_fq_config = Float8FakeQuantizeConfig(dtype=torch.float8_e4m3fn)
+    elif activation_dtype == TorchAOQuantDType.mxfp4:
+        activation_fq_config = MXFakeQuantizeConfig(
+            dtype=torch.float4_e2m1fn_x2,
+            block_size=group_size,
+            scaling_mode=base_config.scaling_mode,
+            kernel_preference=base_config.kernel_preference
+        )
 
     if weight_fq_config is not None:
         return QATConfig(
