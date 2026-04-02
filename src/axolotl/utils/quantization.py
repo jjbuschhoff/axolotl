@@ -122,6 +122,7 @@ def get_quantization_config(
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
         from torchao.prototype.mx_formats.inference_workflow import MXDynamicActivationMXWeightConfig
+        from torchao.quantization.quantize_.common import KernelPreference
 
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
         block_size = group_size if group_size is not None else 32
@@ -133,6 +134,7 @@ def get_quantization_config(
             block_size=block_size,
             activation_dtype=torch.float4_e2m1fn_x2,
             weight_dtype=torch.float4_e2m1fn_x2,
+            kernel_preference=KernelPreference.EMULATED
         )
         return base_cfg
 
